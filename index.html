@@ -235,7 +235,12 @@ function allItems(){
 }
 
 /* ---------- voz (inglés de EE.UU.) ---------- */
-const TTS={ok:typeof window.speechSynthesis!=='undefined'&&typeof window.SpeechSynthesisUtterance!=='undefined',voice:null,english:0,total:0,slow:load('pron_v2_slow',false)};
+// Velocidades de la voz, de la mas lenta a la mas rapida.
+const VELS=[{n:'muy lento',r:0.5},{n:'lento',r:0.7},{n:'normal',r:0.95},{n:'rápido',r:1.2},{n:'muy rápido',r:1.45}];
+const VEL_NORMAL=2;
+// Quien ya usaba el ajuste anterior conserva su eleccion.
+const velGuardada=()=>{const v=load('pron_v2_vel',null);return (typeof v==='number'&&v>=0&&v<VELS.length)?v:(load('pron_v2_slow',false)?1:VEL_NORMAL)};
+const TTS={ok:typeof window.speechSynthesis!=='undefined'&&typeof window.SpeechSynthesisUtterance!=='undefined',voice:null,english:0,total:0,vel:velGuardada()};
 const AVISO_VOZ='Tu dispositivo no tiene una voz en inglés instalada. En el iPhone: Ajustes > Accesibilidad > Contenido leído > Voces > English > descarga una voz de Estados Unidos.';
 function pickVoice(){
   if(!TTS.ok)return;
@@ -293,7 +298,7 @@ function speak(text){
   if(TTS.total&&!TTS.english){toast(AVISO_VOZ);return}
   const u=new SpeechSynthesisUtterance(text);
   u.lang=(TTS.voice&&TTS.voice.lang)||'en-US';if(TTS.voice)u.voice=TTS.voice;
-  u.rate=TTS.slow?0.65:0.95;u.volume=1;u.pitch=1;
+  u.rate=VELS[TTS.vel].r;u.volume=1;u.pitch=1;
   let started=false;
   u.onstart=()=>{started=true;toast('')};
   u.onerror=e=>{if(e&&e.error!=='interrupted'&&e.error!=='canceled')toast('No se pudo reproducir el audio ('+(e.error||'error')+'). Revisa el volumen y que el teléfono no esté en silencio.')};
@@ -312,7 +317,13 @@ const ipaSpan=i=>i?`<span class="ipa">/${esc(i)}/</span>`:'';
 const pron=(f,i,s)=>`<div class="pron">${sayBtn(s)}<span class="phon">${esc(f)}</span>${ipaSpan(i)}</div>`;
 const exLine=x=>x?`<div class="ex">${sayBtn(x,1)}${esc(x)}</div>`:'';
 const spokenOf=i=>i.s||String(i.en).replace(/\s*\(.*?\)/g,'').split(' / ').join(', ');
-function renderSpeed(){const b=document.getElementById('speed');if(b)b.textContent=TTS.slow?'Audio: lento':'Audio: normal'}
+function renderSpeed(){
+  const b=document.getElementById('speed');
+  if(!b)return;
+  b.textContent='Audio: '+VELS[TTS.vel].n;
+  b.setAttribute('aria-label','Velocidad del audio: '+VELS[TTS.vel].n+'. Toca para cambiarla.');
+  b.setAttribute('title','Toca para cambiar la velocidad de la voz');
+}
 
 /* ---------- utilidades ---------- */
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -624,7 +635,7 @@ $('#fSave').onclick=()=>{
 };
 
 renderTabs();render();renderSpeed();
-document.getElementById('speed').addEventListener('click',()=>{TTS.slow=!TTS.slow;save('pron_v2_slow',TTS.slow);renderSpeed();speak(TTS.slow?'Slow speed':'Normal speed')});
+document.getElementById('speed').addEventListener('click',()=>{TTS.vel=(TTS.vel+1)%VELS.length;save('pron_v2_vel',TTS.vel);renderSpeed();speak('This is the speed.')});
 </script>
 <script>
 if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{})})}
