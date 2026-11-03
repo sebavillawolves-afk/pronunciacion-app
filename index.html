@@ -235,35 +235,55 @@ function allItems(){
 }
 
 /* ---------- voz (inglés de EE.UU.) ---------- */
-const TTS={ok:typeof window.speechSynthesis!=='undefined'&&typeof window.SpeechSynthesisUtterance!=='undefined',voice:null,slow:load('pron_v2_slow',false)};
+const TTS={ok:typeof window.speechSynthesis!=='undefined'&&typeof window.SpeechSynthesisUtterance!=='undefined',voice:null,english:0,total:0,slow:load('pron_v2_slow',false)};
+const AVISO_VOZ='Tu dispositivo no tiene una voz en inglés instalada. En el iPhone: Ajustes > Accesibilidad > Contenido leído > Voces > English > descarga una voz de Estados Unidos.';
 function pickVoice(){
   if(!TTS.ok)return;
-  const vs=speechSynthesis.getVoices().filter(v=>/^en[-_]US/i.test(v.lang));
-  const pref=['Samantha','Google US English','Microsoft Aria','Microsoft Jenny','Microsoft Guy','Ava','Allison','Alex','Microsoft Zira','Microsoft David'];
-  TTS.voice=pref.map(p=>vs.find(v=>v.name.includes(p))).find(Boolean)||vs.find(v=>v.localService)||vs[0]||null;
+  const all=speechSynthesis.getVoices();
+  const us=all.filter(v=>/^en[-_]US/i.test(v.lang));
+  const en=all.filter(v=>/^en([-_]|$)/i.test(v.lang));
+  const pool=us.length?us:en;
+  const pref=['Samantha','Aaron','Nicky','Google US English','Microsoft Aria','Microsoft Jenny','Microsoft Guy','Ava','Allison','Alex','Microsoft Zira','Microsoft David'];
+  TTS.voice=pref.map(p=>pool.find(v=>v.name.includes(p))).find(Boolean)||pool.find(v=>v.localService)||pool[0]||null;
+  TTS.english=en.length;TTS.total=all.length;
 }
 if(TTS.ok){pickVoice();try{speechSynthesis.addEventListener('voiceschanged',pickVoice)}catch(e){speechSynthesis.onvoiceschanged=pickVoice}}
+
+// El iPhone solo deja hablar después de que el usuario toca la pantalla: se abre el audio con un sonido mudo.
+let unlocked=false;
+function unlockTTS(){
+  if(unlocked||!TTS.ok)return;
+  unlocked=true;
+  try{const u=new SpeechSynthesisUtterance(' ');u.volume=0;u.lang='en-US';speechSynthesis.speak(u)}catch(e){}
+}
+['pointerdown','touchstart','keydown'].forEach(ev=>document.addEventListener(ev,unlockTTS,{once:true,capture:true,passive:true}));
+
 let curUtt=null,toastTimer=null;
 function toast(msg){
   let el=document.getElementById('toast');
   if(!el){el=document.createElement('div');el.id='toast';el.setAttribute('role','status');document.body.appendChild(el)}
   el.textContent=msg;el.className=msg?'show':'';
-  clearTimeout(toastTimer);if(msg)toastTimer=setTimeout(()=>{el.className=''},5000);
+  clearTimeout(toastTimer);if(msg)toastTimer=setTimeout(()=>{el.className=''},7000);
 }
 function speak(text){
   if(!TTS.ok){toast('Este navegador no permite reproducir audio. Abre la página en Safari o Chrome.');return}
   const s=window.speechSynthesis;
+  unlockTTS();
   if(!TTS.voice)pickVoice();
-  try{if(s.speaking||s.pending)s.cancel()}catch(e){}
-  try{s.resume()}catch(e){}
+  if(TTS.total&&!TTS.english){toast(AVISO_VOZ);return}
   const u=new SpeechSynthesisUtterance(text);
-  u.lang='en-US';if(TTS.voice)u.voice=TTS.voice;u.rate=TTS.slow?0.65:0.95;u.volume=1;u.pitch=1;
+  u.lang=(TTS.voice&&TTS.voice.lang)||'en-US';if(TTS.voice)u.voice=TTS.voice;
+  u.rate=TTS.slow?0.65:0.95;u.volume=1;u.pitch=1;
   let started=false;
   u.onstart=()=>{started=true;toast('')};
   u.onerror=e=>{if(e&&e.error!=='interrupted'&&e.error!=='canceled')toast('No se pudo reproducir el audio ('+(e.error||'error')+'). Revisa el volumen y que el teléfono no esté en silencio.')};
   curUtt=u;
-  s.speak(u);
-  setTimeout(()=>{if(!started&&!s.speaking)toast('El audio no comenzó. Revisa que el teléfono no esté en modo silencio y que el volumen esté alto. Si abriste la página dentro de la app de Claude, ábrela en Safari.')},2500);
+  const lanzar=()=>{try{s.resume()}catch(e){}try{s.speak(u)}catch(e){}};
+  // Hablar justo después de cancelar deja el audio trabado en el iPhone: se espera un instante.
+  if(s.speaking||s.pending){try{s.cancel()}catch(e){}setTimeout(lanzar,140)}else lanzar();
+  // Si el iPhone ignoró el primer intento, se repite una vez.
+  setTimeout(()=>{if(!started&&!s.speaking&&!s.pending&&curUtt===u)lanzar()},700);
+  setTimeout(()=>{if(!started&&!s.speaking)toast('El audio no comenzó. Revisa que el teléfono no esté en modo silencio y que el volumen esté alto. Si abriste la página dentro de otra app, ábrela en Safari.')},2500);
 }
 document.addEventListener('click',e=>{const b=e.target.closest('[data-say]');if(b){e.preventDefault();e.stopPropagation();speak(b.dataset.say)}},true);
 const SPK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg>';
@@ -478,7 +498,7 @@ function renderSounds(){
     <h2>Sonidos del inglés estadounidense</h2>
     <p class="lead">Cada palabra muestra la transcripción del Alfabeto Fonético Internacional (IPA) junto a la fonética en español. Aquí está cada símbolo con su explicación. La voz del dispositivo no puede pronunciar sonidos aislados, así que cada sonido se escucha en palabras de ejemplo: toca una palabra o "Escuchar ejemplos".</p>
     <p class="lead">En la transcripción, ˈ marca la sílaba con acento principal y ˌ el acento secundario.</p>
-    <div class="diag"><button type="button" class="btn primary" data-say="Hello. This is a sound test.">Probar audio</button><span>${!TTS.ok?'Este navegador no permite reproducir audio.':(()=>{const vs=speechSynthesis.getVoices();const en=vs.filter(v=>/^en[-_]US/i.test(v.lang));return 'Voz: '+(TTS.voice?esc(TTS.voice.name):'predeterminada del sistema')+' · voces en inglés de EE.UU.: '+en.length+' de '+vs.length})()}</span></div>
+    <div class="diag"><button type="button" class="btn primary" data-say="Hello. This is a sound test.">Probar audio</button><span>${!TTS.ok?'Este navegador no permite reproducir audio.':(pickVoice(),!TTS.total?'Toca \"Probar audio\": el dispositivo entrega sus voces al primer uso.':TTS.english?'Voz: '+(TTS.voice?esc(TTS.voice.name):'predeterminada del sistema')+' · voces en inglés disponibles: '+TTS.english+' de '+TTS.total:'<b>Falta la voz en inglés.</b> '+esc(AVISO_VOZ))}</span></div>
     <div class="legend"><span class="lv igual">igual que en español</span><span class="lv">parecido al español</span><span class="lv nuevo">no existe en español</span></div>
     ${groups.map(g=>`<h3 class="st-h3" style="font-size:1.05rem;color:var(--accent);margin:16px 0 8px">${g}</h3><div class="chart">${DATA.chart.filter(s=>s.g===g).map(s=>`
       <div class="snd">
